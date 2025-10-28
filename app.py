@@ -3,6 +3,7 @@ import asyncio
 import logging
 from config import API_ID, API_HASH, SESSION_STRING, BOT_TOKEN
 import os
+import sys
 
 # Configure logging
 logging.basicConfig(
@@ -20,11 +21,15 @@ class TelegramMessageDeleter:
     async def start_user_client(self):
         """Start the user client using session string"""
         try:
+            logger.info("🔄 Starting user client...")
             self.user_client = TelegramClient(
                 session_string=SESSION_STRING,
                 api_id=API_ID,
                 api_hash=API_HASH
             )
+            
+            await self.user_client.start()
+            logger.info("✅ User client started successfully")
             
             @self.user_client.on(events.NewMessage())
             async def handler(event):
@@ -35,6 +40,7 @@ class TelegramMessageDeleter:
                     
                     # Check if message is from a bot and not from our own bot
                     if (event.sender.bot and 
+                        self.bot_info and 
                         event.sender.id != self.bot_info.id):
                         
                         logger.info(f"🤖 Bot message detected from {event.sender.first_name} (ID: {event.sender.id})")
@@ -52,22 +58,23 @@ class TelegramMessageDeleter:
                 except Exception as e:
                     logger.error(f"Error in message handler: {e}")
 
-            await self.user_client.start()
-            logger.info("✅ User client started successfully")
+            return True
             
         except Exception as e:
             logger.error(f"❌ Failed to start user client: {e}")
-            raise
+            return False
 
     async def start_bot_client(self):
         """Start the bot client"""
         try:
+            logger.info("🔄 Starting bot client...")
             self.bot_client = TelegramClient(
                 session='bot_session',
                 api_id=API_ID, 
                 api_hash=API_HASH
-            ).start(bot_token=BOT_TOKEN)
+            )
             
+            await self.bot_client.start(bot_token=BOT_TOKEN)
             self.bot_info = await self.bot_client.get_me()
             logger.info(f"✅ Bot client started: {self.bot_info.first_name} (@{self.bot_info.username})")
             
@@ -76,9 +83,11 @@ class TelegramMessageDeleter:
             async def start_handler(event):
                 await event.reply("🤖 Bot Message Deleter is running!\n\nI will automatically delete other bot messages 10 seconds after they are sent.")
             
+            return True
+            
         except Exception as e:
             logger.error(f"❌ Failed to start bot client: {e}")
-            raise
+            return False
 
     async def check_connections(self):
         """Check if both clients are connected properly"""
@@ -98,60 +107,60 @@ class TelegramMessageDeleter:
     async def run(self):
         """Run both clients"""
         try:
-            await self.start_bot_client()
-            await self.start_user_client()
+            # Start bot client first
+            bot_started = await self.start_bot_client()
+            if not bot_started:
+                logger.error("❌ Failed to start bot client")
+                return
+                
+            # Start user client
+            user_started = await self.start_user_client()
+            if not user_started:
+                logger.error("❌ Failed to start user client")
+                return
             
             if await self.check_connections():
                 logger.info("🚀 Bot Message Deleter is now running!")
                 logger.info("📝 Monitoring for bot messages...")
                 
-                # Keep the clients running
+                # Keep both clients running
                 await asyncio.gather(
                     self.user_client.run_until_disconnected(),
-                    self.bot_client.run_until_disconnected()
+                    self.bot_client.run_until_disconnected(),
+                    return_exceptions=True
                 )
             else:
                 logger.error("❌ Failed to establish connections")
                 
         except Exception as e:
             logger.error(f"❌ Fatal error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
         finally:
             # Cleanup
-            if self.user_client:
-                await self.user_client.disconnect()
-            if self.bot_client:
-                await self.bot_client.disconnect()
+            logger.info("🔄 Disconnecting clients...")
+            try:
+                if self.user_client:
+                    await self.user_client.disconnect()
+                if self.bot_client:
+                    await self.bot_client.disconnect()
+            except:
+                pass
 
-# For Heroku deployment
-from flask import Flask
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "🤖 Telegram Bot Message Deleter is running!"
-
-@app.route('/health')
-def health():
-    return "✅ Service is healthy"
-
-async def start_bot():
+async def main():
+    """Main async function to run the bot"""
     deleter = TelegramMessageDeleter()
     await deleter.run()
 
-def run_bot():
-    """Function to run the bot (for Heroku)"""
-    asyncio.run(start_bot())
-
 if __name__ == "__main__":
-    # For local testing
-    import threading
+    # For Heroku - simple execution without Flask
+    logger.info("🚀 Starting Telegram Bot Message Deleter...")
     
-    # Start Flask app in a separate thread for Heroku
-    flask_thread = threading.Thread(
-        target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)), debug=False, use_reloader=False)
-    )
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    # Start the bot
-    run_bot()
+    try:
+        # Run the bot
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("⏹️ Bot stopped by user")
+    except Exception as e:
+        logger.error(f"❌ Critical error: {e}")
+        sys.exit(1)

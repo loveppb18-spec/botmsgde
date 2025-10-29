@@ -14,7 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-DELETE_DELAY = 250  # 250 seconds instead of 10
+DELETE_DELAY = 300  # 250 seconds instead of 10
 
 class TelegramMessageDeleter:
     def __init__(self):
@@ -101,7 +101,7 @@ class TelegramMessageDeleter:
                 creator_text += "• Works in groups where I'm admin\n"
                 creator_text += "• Monitors all bot activities\n\n"
                 creator_text += "**Requirements:**\n"
-                creator_text += "• Bot must be admin with delete permissions\n"
+                creator_text += "• Bot must have power to admin with delete permissions\n"
                 creator_text += "• User account must be admin with delete permissions\n\n"
                 creator_text += "🚀 *Bot is now running and monitoring...*"
                 
